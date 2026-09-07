@@ -291,3 +291,50 @@ export default [
   //   rules: { 'no-restricted-syntax': 'off' },
   // },
 ];
+
+// ---------------------------------------------------------------------------
+// DS §15 DECLARED GAP — why this repo ships the XSS rule and NO fixture.
+//
+// §15 requires a fixture for any repo whose source renders HTML, because a rule
+// only ever shown to pass on clean input has not been shown to fire. This repo
+// does not ship one, and this comment is the declaration §15 requires instead:
+// a silence cannot be reviewed, a declaration can.
+//
+// THE REASON IS NOT THAT NOTHING RENDERS HTML. It is that none of the code that
+// does is reachable by ESLint. Measured on origin/main, 2026-09-07:
+//
+//   product .js/.mjs files ESLint can see ....... 2
+//     eslint.config.js  — this file, gained by adopting the kit
+//     test/harness.mjs  — the CSP harness, test tooling
+//   product .js files ........................... 0
+//   inline <script> in index.html ............... 2 blocks, 1,067 lines
+//   innerHTML assignments inside them ........... 9
+//
+// So 100% of the JavaScript that runs for a user is inline in index.html, where
+// a JS lint rule cannot reach it — the same structural gap as gatus#23. Adding
+// the fixture here would make it report a confident 5-of-5 through its
+// synthetic src/ path while covering, literally, nothing. That is a vacuous
+// gate, and §15 spent v2.54.0–v2.57.0 removing exactly that shape.
+//
+// The rule above is kept, not removed: it costs nothing, and it starts working
+// the day this repo grows a real .js file.
+//
+// TRACKED IN: MichalAFerber/cert-viewer.us#13, which is the family-wide item —
+// roughly 15,000 lines of browser JavaScript across the 15 *-viewer.us repos,
+// all of it parsing hostile files into a DOM, all of it outside the lint gate.
+// #13 measured the failure directly, and it was RE-MEASURED here on 2026-09-07
+// in both directions, because "the linter cannot see it" is a claim about an
+// instrument and deserves a control:
+//
+//   the §15 hazard planted inside index.html's inline script
+//     -> `eslint .` exits 0, rule reports 0 findings        INVISIBLE
+//   the SAME hazard in a real src/__probe.js
+//     -> `eslint .` exits 1, rule reports it                CAUGHT
+//
+// So the rule is not broken and the config is not misscoped — the code is simply
+// out of reach. Reaching it needs an HTML processor in
+// templates/eslint.config.js, which is an estate-level decision and not a change
+// any single repo can make by editing a glob.
+//
+// Adoption is tracked in MichalAFerber/tgwab-standards#129.
+// ---------------------------------------------------------------------------
