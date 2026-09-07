@@ -122,6 +122,30 @@ export default [
       globals: { ...globals.browser, ...globals.node, ...globals.webextensions },
     },
   },
+
+  // ---------------------------------------------------------------------------
+  // CROSS-FILE GLOBAL, DECLARED RATHER THAN SUPPRESSED.
+  //
+  // cert-core.js is a DOM-free ASN.1/X.509 parser that assigns `root.CERTCORE`;
+  // app.js consumes it. They load in document order as two plain <script src>
+  // tags, so the reference is correct at runtime — ESLint simply does not track
+  // globals across files without being told.
+  //
+  // This is a `globals` declaration and NOT an eslint-disable comment on the two
+  // call sites, deliberately. A per-line suppression would silence any FUTURE
+  // undefined name on those lines too, and it would put the same marker on a
+  // real reference as on a typo. Declaring the name says what is true: CERTCORE
+  // exists, it is read-only here, and it comes from the file loaded before this
+  // one. Every viewer that splits a core parser out will want the same shape —
+  // pub-viewer.us has PUBCORE, pptx-viewer.us has JSZip from a still-inline
+  // vendored block.
+  // ---------------------------------------------------------------------------
+  {
+    files: ['app.js'],
+    languageOptions: {
+      globals: { CERTCORE: 'readonly' },
+    },
+  },
   {
     rules: {
       // ESLint 9 changed `caughtErrors` from 'none' to 'all', so every

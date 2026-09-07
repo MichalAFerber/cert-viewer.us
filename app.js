@@ -28,34 +28,18 @@
   if (brandIcon && favLink) brandIcon.src = favLink.href;
 
   var BASE_TITLE = "Cert Viewer";
-  var MAX_HIGHLIGHT = 500000;    // skip source highlighting past ~500 KB
-  var MAX_CHILDREN  = 1000;      // cap rendered siblings per tree node
-  var MAX_ROWS      = 5000;      // cap rendered table rows
 
-  var rawText = "", currentName = "", renderKind = "", parsed = null, parseErr = "";
+  var rawText = "", currentName = "", parseErr = "";
   var hasRendered = false;       // does this file have a rendered plane?
   var mode = "source";           // "rendered" | "source"
-  var codeBuiltFor = null, dataBuilt = false;
+  var codeBuiltFor = null;
   var beautified = false, beautifyCache = null;
   var toastTimer = null;
 
   // Accepted data types (this viewer only).
   var ACCEPT_EXT = { pem:1, crt:1, cer:1, der:1, csr:1, cert:1, p7b:1, p12:1, pfx:1 };
   // highlight.js language per extension.
-  var EXT_LANG = {
-    json:"json", jsonc:"json", json5:"json", jsonld:"json", ndjson:"json",
-    yaml:"yaml", yml:"yaml", toml:"ini",
-    csv:"plaintext", tsv:"plaintext",
-    xml:"xml", rss:"xml", atom:"xml", graphql:"graphql", gql:"graphql"
-  };
   // How each type is rendered: "tree" | "table" | "xml" | "" (source-only).
-  var RENDER_KIND = {
-    json:"tree", jsonc:"tree", json5:"tree", jsonld:"tree", ndjson:"tree",
-    yaml:"tree", yml:"tree",
-    csv:"table", tsv:"table",
-    xml:"xml", rss:"xml", atom:"xml"
-    // toml, graphql, gql -> source-only
-  };
   // Types the Format toggle can pretty-print in the source plane.
   var FORMAT_KIND = {
     json:"json", jsonc:"json", json5:"json", jsonld:"json", ndjson:"ndjson",
@@ -155,201 +139,17 @@
   function stripJsonc(t){ // remove // and /* */ comments (string-aware)
     return t.replace(/("(?:\\.|[^"\\])*")|\/\/[^\n\r]*|\/\*[\s\S]*?\*\//g, function(m, str){ return str ? str : ""; });
   }
-  function parseFor(ext, text){
-    if (ext === "json" || ext === "jsonld") return JSON.parse(text);
-    if (ext === "jsonc") return JSON.parse(stripJsonc(text));
-    if (ext === "json5") return JSON5.parse(text);
-    if (ext === "ndjson"){
-      var out = [], lines = text.split(/\r?\n/);
-      for (var i=0;i<lines.length;i++){ var ln = lines[i].trim(); if (ln) out.push(JSON.parse(ln)); }
-      return out;
-    }
-    if (ext === "yaml" || ext === "yml") return jsyaml.load(text);
-    if (ext === ""){ // pasted or dropped text: no filename — try strict JSON, then lenient JSON5
-      try { return JSON.parse(text); } catch (e){ return JSON5.parse(text); }
-    }
-    throw new Error("no parser");
-  }
-  function parseCsv(text, sep){
-    var rows = [], row = [], cur = "", q = false, i = 0, c, n = text.length;
-    while (i < n){
-      c = text[i];
-      if (q){
-        if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; }
-        else cur += c;
-      } else {
-        if (c === '"') q = true;
-        else if (c === sep){ row.push(cur); cur = ""; }
-        else if (c === '\n'){ row.push(cur); rows.push(row); row = []; cur = ""; }
-        else if (c === '\r'){ /* skip */ }
-        else cur += c;
-      }
-      i++;
-    }
-    if (cur.length || row.length){ row.push(cur); rows.push(row); }
-    return rows;
-  }
 
   // ---------- Rendered plane ----------
-  function typeClass(v){
-    if (v === null) return "nul";
-    var t = typeof v;
-    if (t === "string") return "s";
-    if (t === "number") return "n";
-    if (t === "boolean") return "bool";
-    return "";
-  }
-  function primText(v){
-    if (v === null) return "null";
-    if (typeof v === "string") return JSON.stringify(v);   // quoted + escaped
-    return String(v);
-  }
-  function treeNode(key, value, depth){
-    var li = el("li");
-    var isArr = Array.isArray(value);
-    var isObj = value && typeof value === "object" && !isArr;
-    var row = el("span", "row");
-    var twist = el("span", "twist");
-    row.appendChild(twist);
-    if (key !== null){
-      var ks = el("span", "k"); ks.textContent = key; row.appendChild(ks);
-      var col = el("span", "punc"); col.textContent = ": "; row.appendChild(col);
-    }
-    if (isArr || isObj){
-      var keys = isArr ? null : Object.keys(value);
-      var len = isArr ? value.length : keys.length;
-      var open = el("span", "punc"); open.textContent = isArr ? "[" : "{"; row.appendChild(open);
-      var ell = el("span", "ellip"); ell.textContent = len ? " … " : ""; row.appendChild(ell);
-      var closeInline = el("span", "punc"); closeInline.className = "punc ellip"; closeInline.textContent = isArr ? "]" : "}"; row.appendChild(closeInline);
-      var cnt = el("span", "count"); cnt.textContent = len + (isArr ? (len===1?" item":" items") : (len===1?" key":" keys")); row.appendChild(cnt);
-      li.appendChild(row);
-      var ul = el("ul");
-      var shown = Math.min(len, MAX_CHILDREN);
-      for (var i=0;i<shown;i++){
-        if (isArr) ul.appendChild(treeNode(String(i), value[i], depth+1));
-        else ul.appendChild(treeNode(keys[i], value[keys[i]], depth+1));
-      }
-      if (len > shown){ var more = el("li","more"); more.textContent = "… " + (len - shown) + " more"; ul.appendChild(more); }
-      var close = el("span", "punc"); close.textContent = isArr ? "]" : "}";
-      var closeLi = el("li"); closeLi.appendChild(close); ul.appendChild(closeLi);
-      li.appendChild(ul);
-      twist.textContent = "▾";
-      twist.setAttribute("role", "button");
-      twist.setAttribute("tabindex", "0");
-      twist.setAttribute("aria-label", "Toggle " + (key !== null ? key : (isArr ? "array" : "object")));
-      twist.setAttribute("aria-expanded", "true");
-      if (len === 0 || depth >= 2){ li.className = "collapsed"; twist.textContent = "▸"; twist.setAttribute("aria-expanded", "false"); }
-      var toggle = function(){
-        var c = li.className.indexOf("collapsed") >= 0;
-        li.className = c ? "" : "collapsed";
-        twist.textContent = c ? "▾" : "▸";
-        twist.setAttribute("aria-expanded", c ? "true" : "false");
-      };
-      twist.addEventListener("click", toggle);
-      twist.addEventListener("keydown", function(e){
-        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar"){ e.preventDefault(); toggle(); }
-      });
-    } else {
-      li.className = "leaf";
-      var pv = el("span", typeClass(value)); pv.textContent = primText(value); row.appendChild(pv);
-      li.appendChild(row);
-    }
-    return li;
-  }
-  function renderTree(value){
-    var ul = el("ul", "tree");
-    ul.appendChild(treeNode(null, value, 0));
-    dataView.innerHTML = ""; dataView.appendChild(ul);
-  }
-  function renderTable(rows){
-    dataView.innerHTML = "";
-    if (!rows.length){ dataView.textContent = "(empty)"; return; }
-    var wrap = el("div"); wrap.style.width = "100%";
-    var table = el("table", "data");
-    var thead = el("thead"), htr = el("tr");
-    var rn = el("th", "rownum"); rn.textContent = "#"; htr.appendChild(rn);
-    var head = rows[0];
-    for (var c=0;c<head.length;c++){ var th = el("th"); th.textContent = head[c]; htr.appendChild(th); }
-    thead.appendChild(htr); table.appendChild(thead);
-    var tbody = el("tbody");
-    var shown = Math.min(rows.length - 1, MAX_ROWS);
-    for (var r=1;r<=shown;r++){
-      var tr = el("tr");
-      var num = el("td", "rownum"); num.textContent = r; tr.appendChild(num);
-      var cells = rows[r];
-      for (var k=0;k<head.length;k++){ var td = el("td"); td.textContent = cells[k] != null ? cells[k] : ""; tr.appendChild(td); }
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    dataView.appendChild(table);
-    if (rows.length - 1 > shown){ var m = el("div","more"); m.textContent = "… " + (rows.length - 1 - shown) + " more rows"; dataView.appendChild(m); }
-  }
-  function xmlNodeToLi(node){
-    var li = el("li");
-    var row = el("span","row");
-    var twist = el("span","twist"); row.appendChild(twist);
-    var name = el("span","tag"); name.className = "k"; name.textContent = "<" + node.nodeName + ">"; row.appendChild(name);
-    // attributes
-    if (node.attributes && node.attributes.length){
-      for (var a=0;a<node.attributes.length;a++){
-        var at = node.attributes[a];
-        var sp = el("span"); sp.textContent = " ";
-        var an = el("span","attr"); an.className = "n"; an.textContent = at.name + "=";
-        var av = el("span","s"); av.textContent = JSON.stringify(at.value);
-        row.appendChild(sp); row.appendChild(an); row.appendChild(av);
-      }
-    }
-    var elements = [];
-    for (var i=0;i<node.childNodes.length;i++){ if (node.childNodes[i].nodeType === 1) elements.push(node.childNodes[i]); }
-    var text = (node.textContent || "").trim();
-    li.appendChild(row);
-    if (elements.length){
-      var ul = el("ul");
-      var shown = Math.min(elements.length, MAX_CHILDREN);
-      for (var e=0;e<shown;e++) ul.appendChild(xmlNodeToLi(elements[e]));
-      if (elements.length > shown){ var more = el("li","more"); more.textContent = "… " + (elements.length - shown) + " more"; ul.appendChild(more); }
-      li.appendChild(ul);
-      twist.textContent = "▾";
-      twist.setAttribute("role", "button");
-      twist.setAttribute("tabindex", "0");
-      twist.setAttribute("aria-label", "Toggle " + node.nodeName);
-      twist.setAttribute("aria-expanded", "true");
-      var xtoggle = function(){
-        var c = li.className.indexOf("collapsed") >= 0;
-        li.className = c ? "" : "collapsed";
-        twist.textContent = c ? "▾" : "▸";
-        twist.setAttribute("aria-expanded", c ? "true" : "false");
-      };
-      twist.addEventListener("click", xtoggle);
-      twist.addEventListener("keydown", function(e){
-        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar"){ e.preventDefault(); xtoggle(); }
-      });
-    } else {
-      li.className = "leaf";
-      if (text){ var col = el("span","punc"); col.textContent = ": "; row.appendChild(col); var tv = el("span","s"); tv.textContent = text.length>200 ? text.slice(0,200)+"…" : text; row.appendChild(tv); }
-    }
-    return li;
-  }
-  function renderXml(text){
-    var d = new DOMParser().parseFromString(text, "application/xml");
-    var perr = d.getElementsByTagName("parsererror");
-    if (perr && perr.length) throw new Error("XML parse error");
-    var ul = el("ul","tree");
-    ul.appendChild(xmlNodeToLi(d.documentElement));
-    dataView.innerHTML = ""; dataView.appendChild(ul);
-  }
 
   /* buildRendered() provided by the Cert adapter above */
 
   // ---------- Source plane ----------
   function doFormat(text, ext){
     var kind = FORMAT_KIND[ext];
-    try {
-      if (kind === "json")  return JSON.stringify(JSON.parse(extOf(currentName)==="jsonc"?stripJsonc(text):text), null, 2);
-      if (kind === "ndjson") return text.split(/\r?\n/).filter(function(l){return l.trim();}).map(function(l){ return JSON.stringify(JSON.parse(l), null, 2); }).join("\n");
-      if (kind === "yaml")  return jsyaml.dump(jsyaml.load(text), { indent: 2, lineWidth: 120 });
-      if (kind === "xml")   return prettyXml(text);
-    } catch (e){ throw e; }
+    if (kind === "json")  return JSON.stringify(JSON.parse(extOf(currentName)==="jsonc"?stripJsonc(text):text), null, 2);
+    if (kind === "ndjson") return text.split(/\r?\n/).filter(function(l){return l.trim();}).map(function(l){ return JSON.stringify(JSON.parse(l), null, 2); }).join("\n");
+    if (kind === "xml")   return prettyXml(text);
     return text;
   }
   function prettyXml(text){
@@ -395,14 +195,8 @@
     var key = rawText + " " + beautified;
     if (codeBuiltFor === key) return;
     var text = String(displayText()).replace(/\n$/, "");
-    var lang = EXT_LANG[extOf(currentName)] || "";
     var htmlOut, usedLang = "";
-    if (window.hljs && text.length <= MAX_HIGHLIGHT){
-      try {
-        if (lang && hljs.getLanguage(lang)){ htmlOut = hljs.highlight(text, { language: lang, ignoreIllegals: true }).value; usedLang = lang; }
-        else { var a = hljs.highlightAuto(text); htmlOut = a.value; usedLang = a.language || ""; }
-      } catch (e){ htmlOut = escapeHtml(text); }
-    } else { htmlOut = escapeHtml(text); }
+    htmlOut = escapeHtml(text);
     codeInner.innerHTML = htmlOut;
     codeInner.className = "hljs" + (usedLang ? " language-" + usedLang : "");
     var n = text.length ? text.split("\n").length : 1, g = "";
@@ -560,10 +354,6 @@
     reader.onerror = function(){ toast("Could not read that file"); };
     reader.readAsArrayBuffer(file);
   }
-  function looksStructured(text){
-    var t = String(text||"").replace(/^﻿/,"").replace(/^\s+/,"").charAt(0);
-    return t === "{" || t === "[";
-  }
   function setMode(m){
     mode = m;
     clearTimeout(hdrIdleTimer);
@@ -590,9 +380,9 @@
     btnView.setAttribute("aria-label", toCode ? "View source" : "View rendered data");
   }
   function clearAll(){
-    rawText = ""; currentName = ""; renderKind = ""; parsed = null; parseErr = "";
+    rawText = ""; currentName = ""; parseErr = "";
     syncQueryName("");
-    dataBuilt = false; codeBuiltFor = null; beautified = false; beautifyCache = null; hasRendered = false;
+    codeBuiltFor = null; beautified = false; beautifyCache = null; hasRendered = false;
     dataView.hidden = true; dataView.innerHTML = "";
     codeView.hidden = true; codeInner.textContent = ""; codeInner.className = "hljs"; gutter.textContent = "";
     btnView.hidden = true; btnFormat.hidden = true;
@@ -709,7 +499,7 @@
     themeColor.setAttribute("content", hex);
   }
   function isHex6(v){ return /^#([0-9a-f]{6})$/i.test(v || ""); }
-  function saveColor(val){ setCookie("mykk-bg", val); try { localStorage.setItem("mykk-bg", val); } catch (e) {} }
+  function saveColor(val){ setCookie("mykk-bg", val); try { localStorage.setItem("mykk-bg", val); } catch (e) { /* private mode; the cookie above is the fallback */ } }
   function loadColor(){ var v = getCookie("mykk-bg"); if (!isHex6(v)) { try { v = localStorage.getItem("mykk-bg"); } catch (e) { v = null; } } return isHex6(v) ? v : ((window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "#0d1117" : "#ffffff"); }
   var saved = loadColor(); bgPicker.value = saved; applyColor(saved);
   bgPicker.addEventListener("input", function(){ applyColor(bgPicker.value); saveColor(bgPicker.value); syncThemeToggle(); });
@@ -795,10 +585,10 @@
   var fvh = /[#&]fvh=([^&]*)/.exec(location.hash);
   if (fvh){
     var fvhName = fvh[1];                                   // ⚠️ stranger-controlled — textContent only
-    try { fvhName = decodeURIComponent(fvhName); } catch (_) {}  // malformed %-escapes must not abort the receiver
+    try { fvhName = decodeURIComponent(fvhName); } catch (_) { /* malformed %-escape: keep the raw value */ }  // malformed %-escapes must not abort the receiver
     history.replaceState(null, "", location.pathname + location.search);  // always clear, opener or not
     if (window.opener){
-      try { window.opener.postMessage({ type:"fv-ready" }, "*"); } catch(_){}
+      try { window.opener.postMessage({ type:"fv-ready" }, "*"); } catch(_){ /* opener may be cross-origin */ }
       window.opener = null;    // sever the reverse-navigation channel once the ping is out
       var fvhSub = doc.querySelector(".empty-sub");           // "Receiving …" while the hand-off is pending
       if (fvhSub){

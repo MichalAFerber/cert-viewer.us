@@ -188,7 +188,6 @@
     for (var i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i) & 0xff;
     return { type: type, der: der };
   }
-  function isDer(bytes){ return bytes.length > 4 && bytes[0] === 0x30 && (bytes[1] & 0x80 || bytes[1] < 0x82 || true); }
 
   function parseAny(bytesOrText, name){
     var der, type = "";
