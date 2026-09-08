@@ -27,20 +27,20 @@ jobs:
       # `npm run lint --if-present`, which exits 0 when the script is absent and
       # reports a passing lint that never ran.
       #
-      # READ THIS BEFORE TRUSTING THE STEP. It lints TWO files: eslint.config.js
-      # and test/harness.mjs. The viewer itself is 1,031 lines of JavaScript
-      # inside one inline <script> in index.html, with 9 innerHTML sinks, and
-      # ESLint cannot see any of it -- `eslint index.html` answers "File ignored
-      # because no matching configuration was supplied". Measured: the §15
-      # interpolated-JSON hazard planted inside that inline script produced
-      # nothing, and planted in test/harness.mjs also produced nothing, because
-      # the rule is scoped `**/*.js` and the harness is `.mjs`.
+      # THIS COMMENT USED TO SAY "it lints TWO files: eslint.config.js and
+      # test/harness.mjs", because until #21 (2026-09-07) the viewer was 1,031
+      # lines of JavaScript inside one inline <script> in index.html, which
+      # ESLint cannot reach at all. #21 extracted that inline script wholesale
+      # into app.js and cert-core.js, so the rule now also reaches those two
+      # real files — and DS §15: add the XSS lint fixture (tgwab-standards#125)
+      # added a fifth, test/xss-lint-fixture.test.js (the fixture itself,
+      # test/fixtures/xss-lint-fixture.js, stays out via eslint.config.js's own
+      # ignore, by design).
       #
-      # What DOES check the inline script is the harness step below: it drives
-      # index.html under the real _headers CSP and asserts zero pageerror and
-      # zero console errors, so a throw or a syntax error there fails CI. That
-      # is a real gate, but it is not lint, and it would not catch the XSS
-      # pattern §15 exists for.
+      # index.html now carries no inline script beyond a static JSON-LD block,
+      # so the harness step below is no longer this repo's only check on
+      # hand-written JavaScript — it still matters for what lint cannot see:
+      # a throw or a syntax error at runtime, under the real _headers CSP.
       - name: lint
         run: |
           set -euo pipefail
@@ -53,6 +53,14 @@ jobs:
             exit 1
           fi
           npm run lint
+
+      # §15 fixture: proves the XSS rule above still fires and still reaches
+      # the two real files (app.js, cert-core.js) named in
+      # test/fixtures/xss-lint-covers.json. Not folded into the harness step
+      # or the "test" npm script above -- both are Playwright-based and this
+      # needs neither Chromium nor a server.
+      - name: DS §15 XSS lint fixture
+        run: node --test test/xss-lint-fixture.test.js
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
