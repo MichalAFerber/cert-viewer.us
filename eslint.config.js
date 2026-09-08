@@ -317,48 +317,44 @@ export default [
 ];
 
 // ---------------------------------------------------------------------------
-// DS §15 DECLARED GAP — why this repo ships the XSS rule and NO fixture.
+// DS §15 — THE GAP THIS FILE USED TO DECLARE IS NOW CLOSED.
 //
-// §15 requires a fixture for any repo whose source renders HTML, because a rule
-// only ever shown to pass on clean input has not been shown to fire. This repo
-// does not ship one, and this comment is the declaration §15 requires instead:
-// a silence cannot be reviewed, a declaration can.
+// Until #21 (2026-09-07) this block declared a gap instead of shipping a
+// fixture, because 100% of this viewer's JavaScript was inline in
+// `index.html` — 2 blocks, 1,067 lines, 9 `innerHTML` sinks — where ESLint
+// cannot reach a `<script>` element at all. Adding the fixture then would
+// have reported a confident 5-of-5 through its synthetic `src/` path while
+// covering, literally, nothing: the vacuous-gate shape §15 v2.54.0–v2.57.0
+// removed. THAT REASON NO LONGER HOLDS. #21 extracted the inline script
+// wholesale into `app.js` (641 lines) and `cert-core.js` (214 lines) — real,
+// lint-reachable files, neither in the ignores above. `index.html` now
+// carries no inline script beyond a static JSON-LD block and two
+// `<script src>` tags.
 //
-// THE REASON IS NOT THAT NOTHING RENDERS HTML. It is that none of the code that
-// does is reachable by ESLint. Measured on origin/main, 2026-09-07:
+// The declaration stood correctly against the repo as it was; the repo moved
+// and the declaration did not, so between #21 and this change it was
+// asserting something false in this repo's own voice — worse than no
+// declaration at all, because it read as a considered decision rather than a
+// gap. Caught by DevOps re-checking the sweep, not by anything in this file.
 //
-//   product .js/.mjs files ESLint can see ....... 2
-//     eslint.config.js  — this file, gained by adopting the kit
-//     test/harness.mjs  — the CSP harness, test tooling
-//   product .js files ........................... 0
-//   inline <script> in index.html ............... 2 blocks, 1,067 lines
-//   innerHTML assignments inside them ........... 9
+// The original two-probe record is preserved below as HOW the gap was
+// established, not as a claim still standing:
 //
-// So 100% of the JavaScript that runs for a user is inline in index.html, where
-// a JS lint rule cannot reach it — the same structural gap as gatus#23. Adding
-// the fixture here would make it report a confident 5-of-5 through its
-// synthetic src/ path while covering, literally, nothing. That is a vacuous
-// gate, and §15 spent v2.54.0–v2.57.0 removing exactly that shape.
-//
-// The rule above is kept, not removed: it costs nothing, and it starts working
-// the day this repo grows a real .js file.
-//
-// TRACKED IN: MichalAFerber/cert-viewer.us#13, which is the family-wide item —
-// roughly 15,000 lines of browser JavaScript across the 15 *-viewer.us repos,
-// all of it parsing hostile files into a DOM, all of it outside the lint gate.
-// #13 measured the failure directly, and it was RE-MEASURED here on 2026-09-07
-// in both directions, because "the linter cannot see it" is a claim about an
-// instrument and deserves a control:
-//
-//   the §15 hazard planted inside index.html's inline script
+//   the §15 hazard planted inside index.html's inline script (pre-#21)
 //     -> `eslint .` exits 0, rule reports 0 findings        INVISIBLE
 //   the SAME hazard in a real src/__probe.js
 //     -> `eslint .` exits 1, rule reports it                CAUGHT
 //
-// So the rule is not broken and the config is not misscoped — the code is simply
-// out of reach. Reaching it needs an HTML processor in
-// templates/eslint.config.js, which is an estate-level decision and not a change
-// any single repo can make by editing a glob.
+// Both rows were re-measured post-#21 rather than assumed carried forward:
+// the fixture and `test/fixtures/xss-lint-covers.json` (naming `app.js` and
+// `cert-core.js`) now stand in for the first row, and the coverage test
+// resolving the rule for both named files is the second row's replacement —
+// see `test/xss-lint-fixture.test.js`.
 //
-// Adoption is tracked in MichalAFerber/tgwab-standards#129.
+// TRACKED IN: MichalAFerber/cert-viewer.us#13 remains OPEN and is UNAFFECTED
+// by this change — it is the family-wide item for the other 14 *-viewer.us
+// repos, none of which extracted their inline script. This repo's own
+// instance of the gap #13 named is what closed here, not the family issue.
+//
+// Adoption is tracked in MichalAFerber/tgwab-standards#125 and #129.
 // ---------------------------------------------------------------------------

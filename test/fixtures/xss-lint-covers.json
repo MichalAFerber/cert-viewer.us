@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "DS §15 — this repo's declaration of what the XSS rule covers.",
+    "Product source only: code that runs for a user.",
+    "",
+    "Both files were extracted from index.html's inline <script> on 2026-09-07",
+    "(#21), which is what made them lint-reachable at all. app.js assigns",
+    "decoded certificate data to innerHTML (line ~200) and pretty-prints",
+    "JSON/NDJSON payloads with JSON.stringify; cert-core.js is the DOM-free",
+    "ASN.1/X.509 parser it consumes. Neither currently interpolates",
+    "JSON.stringify into a template literal — 0 findings today — but both are",
+    "the genuine, reachable product source, and app.js in particular is",
+    "exactly where the hazard this rule exists for would land."
+  ],
+  "covers": ["app.js", "cert-core.js"],
+  "why": "the two files this repo's inline <script> was extracted into (#21) — the only product JavaScript that renders for a user"
+}
